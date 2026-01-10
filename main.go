@@ -28,7 +28,7 @@ func checkLink(link string) {
 	resp, err := http.Get(link)
 	if err != nil {
 		fmt.Printf("❌ Error checking %s: %v\n", link, err)
-		return // Function se bahar aa jao, main loop chalta rahega
+		return //Function se bahar aa jao, main loop chalta rahega
 	}
 	defer resp.Body.Close()
 
