@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sync" // Synchronization primitives ke liye
 )
 
 func main() {
-	// os.Args[1:] ka matlab hai 1st index se lekar end tak saare arguments lapet lo
-	// Isse hume ek string slice mil jayega URLs ka
 	links := os.Args[1:]
 
 	if len(links) == 0 {
@@ -16,19 +15,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Step 3: Loop chalao aur har link ko check karo
+	// Step 4: WaitGroup initialize karna
+	// Ye ek counter ki tarah hai jo track rakhega kitne workers kaam kar rahe hain
+	var wg sync.WaitGroup
+
 	for _, link := range links {
-		checkLink(link)
+		// Har link ke liye counter ko +1 karo
+		wg.Add(1)
+
+		// 'go' keyword lagate hi ye function background mein chalne lagega
+		// Humne yahan pointer (&wg) bheja hai taaki function original counter ko update kar sake
+		go checkLink(link, &wg)
 	}
+
+	// Main function ko bolo: "Ruko! Jab tak counter 0 na ho jaye, kahin mat jana"
+	wg.Wait()
+	fmt.Println("\nAll links checked. Shanti!")
 }
 
-// checkLink function humne alag se banaya hai taaki code neat rahe
-// Ye function abhi "serial" kaam kar raha hai (ek ke baad ek)
-func checkLink(link string) {
+// checkLink mein ab hum WaitGroup ka pointer bhi le rahe hain
+func checkLink(link string, wg *sync.WaitGroup) {
+	// Function khatam hote hi counter ko -1 kar do
+	defer wg.Done()
+
 	resp, err := http.Get(link)
 	if err != nil {
 		fmt.Printf("❌ Error checking %s: %v\n", link, err)
-		return //Function se bahar aa jao, main loop chalta rahega
+		return
 	}
 	defer resp.Body.Close()
 
