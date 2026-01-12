@@ -1,17 +1,21 @@
 package main
 
 import (
+	"encoding/json" // JSON conversion ke liye
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 )
 
+// Step 9: Struct mein JSON tags add karna
+// Jab hum Marshal karenge, toh Go in tags ko dekh kar JSON keys banayega.
+// Note: Humne 'Error' ko string mein badla hai kyunki 'error' interface JSON mein marshal nahi hota.
 type result struct {
-	url        string
-	statusCode int
-	err        error
-	timestamp  string
+	URL        string `json:"url"`
+	StatusCode int    `json:"status_code"`
+	ErrorMsg   string `json:"error,omitempty"` // omitempty ka matlab agar error nahi hai toh JSON mein mat dikhao
+	Timestamp  string `json:"timestamp"`
 }
 
 func main() {
@@ -24,9 +28,6 @@ func main() {
 
 	resultsChannel := make(chan result)
 
-	// Step 8: Custom HTTP Client with Timeout
-	// Go ka default client infinite wait kar sakta hai, jo ki bahut risky hai.
-	// Hum yahan 5-second ka timeout set kar rahe hain.
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
@@ -36,36 +37,39 @@ func main() {
 	}
 
 	for res := range resultsChannel {
-		if res.err != nil {
-			// Ab agar timeout hoga, toh yahan "context deadline exceeded" dikhega
-			fmt.Printf("[%s] ❌ %s | Status: DOWN/TIMEOUT | Error: %v\n", res.timestamp, res.url, res.err)
-		} else {
-			fmt.Printf("[%s] ✅ %s | Status: %d\n", res.timestamp, res.url, res.statusCode)
+		// Step 9: Struct ko JSON mein badalna (Marshaling)
+		// json.Marshal returns: byte slice ([]byte) and error
+		jsonData, err := json.Marshal(res)
+		if err != nil {
+			fmt.Printf("Error marshaling to JSON: %v\n", err)
+			continue
 		}
 
+		// Ab hum terminal par poora JSON string print karenge
+		// %s isliye use kiya kyunki jsonData ek byte slice hai
+		fmt.Printf("DATA: %s\n", string(jsonData))
+
 		go func(l string) {
-			time.Sleep(10 * time.Second) // Thoda aur chill gap
+			time.Sleep(10 * time.Second)
 			checkLink(l, resultsChannel, client)
-		}(res.url)
+		}(res.URL)
 	}
 }
 
-// Ab hum function mein client bhi pass kar rahe hain
 func checkLink(link string, c chan result, client *http.Client) {
 	res := result{
-		url:       link,
-		timestamp: time.Now().Format("15:04:05"),
+		URL:       link,
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"), // Proper ISO-ish format
 	}
 
-	// Default http.Get ki jagah ab hum apna timed-out client use karenge
 	resp, err := client.Get(link)
 	if err != nil {
-		res.err = err
+		res.ErrorMsg = err.Error() // error ko string mein convert kiya
 		c <- res
 		return
 	}
 	defer resp.Body.Close()
 
-	res.statusCode = resp.StatusCode
+	res.StatusCode = resp.StatusCode
 	c <- res
 }
