@@ -4,15 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"time" // Timestamp ke liye
+	"time"
 )
 
-// Step 6: Ek mast struct banao result hold karne ke liye
-// Bilkul waise hi jaise tu DynamoDB ke liye schema banata hai
 type result struct {
 	url        string
 	statusCode int
-	status     string
 	err        error
 	timestamp  string
 }
@@ -25,44 +22,50 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Ab channel string ka nahi, hamare custom 'result' struct ka hoga
 	resultsChannel := make(chan result)
 
-	for _, link := range links {
-		go checkLink(link, resultsChannel)
+	// Step 8: Custom HTTP Client with Timeout
+	// Go ka default client infinite wait kar sakta hai, jo ki bahut risky hai.
+	// Hum yahan 5-second ka timeout set kar rahe hain.
+	client := &http.Client{
+		Timeout: 5 * time.Second,
 	}
 
-	// Results collect karo
-	for i := 0; i < len(links); i++ {
-		res := <-resultsChannel
+	for _, link := range links {
+		go checkLink(link, resultsChannel, client)
+	}
 
-		// Ab humare paas structured data hai, hum kuch bhi kar sakte hain!
+	for res := range resultsChannel {
 		if res.err != nil {
-			fmt.Printf("[%s] ❌ %s | Error: %v\n", res.timestamp, res.url, res.err)
+			// Ab agar timeout hoga, toh yahan "context deadline exceeded" dikhega
+			fmt.Printf("[%s] ❌ %s | Status: DOWN/TIMEOUT | Error: %v\n", res.timestamp, res.url, res.err)
 		} else {
-			fmt.Printf("[%s] ✅ %s | Status: %d (%s)\n", res.timestamp, res.url, res.statusCode, res.status)
+			fmt.Printf("[%s] ✅ %s | Status: %d\n", res.timestamp, res.url, res.statusCode)
 		}
+
+		go func(l string) {
+			time.Sleep(10 * time.Second) // Thoda aur chill gap
+			checkLink(l, resultsChannel, client)
+		}(res.url)
 	}
 }
 
-func checkLink(link string, c chan result) {
-	// Har result ke liye ek naya struct instance taiyar karo
+// Ab hum function mein client bhi pass kar rahe hain
+func checkLink(link string, c chan result, client *http.Client) {
 	res := result{
 		url:       link,
-		timestamp: time.Now().Format("15:04:05"), // Current time (HH:MM:SS)
+		timestamp: time.Now().Format("15:04:05"),
 	}
 
-	resp, err := http.Get(link)
+	// Default http.Get ki jagah ab hum apna timed-out client use karenge
+	resp, err := client.Get(link)
 	if err != nil {
 		res.err = err
-		c <- res // Poora struct pipe mein daal do
+		c <- res
 		return
 	}
 	defer resp.Body.Close()
 
-	// Struct ki fields bharo
 	res.statusCode = resp.StatusCode
-	res.status = resp.Status
-	
 	c <- res
 }
