@@ -1,20 +1,17 @@
 package main
 
 import (
-	"encoding/json" // JSON conversion ke liye
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"time"
 )
 
-// Step 9: Struct mein JSON tags add karna
-// Jab hum Marshal karenge, toh Go in tags ko dekh kar JSON keys banayega.
-// Note: Humne 'Error' ko string mein badla hai kyunki 'error' interface JSON mein marshal nahi hota.
 type result struct {
 	URL        string `json:"url"`
 	StatusCode int    `json:"status_code"`
-	ErrorMsg   string `json:"error,omitempty"` // omitempty ka matlab agar error nahi hai toh JSON mein mat dikhao
+	ErrorMsg   string `json:"error,omitempty"`
 	Timestamp  string `json:"timestamp"`
 }
 
@@ -36,18 +33,31 @@ func main() {
 		go checkLink(link, resultsChannel, client)
 	}
 
+	// Step 10: Log file open karna (Append mode mein)
+	// Agar file nahi hai toh Create hogi, hai toh naya data peeche judta jayega
+	f, err := os.OpenFile("log_results.jsonl", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Printf("Fatal: Could not open log file: %v\n", err)
+		os.Exit(1)
+	}
+	defer f.Close()
+
 	for res := range resultsChannel {
-		// Step 9: Struct ko JSON mein badalna (Marshaling)
-		// json.Marshal returns: byte slice ([]byte) and error
 		jsonData, err := json.Marshal(res)
 		if err != nil {
-			fmt.Printf("Error marshaling to JSON: %v\n", err)
+			fmt.Printf("Error marshaling: %v\n", err)
 			continue
 		}
 
-		// Ab hum terminal par poora JSON string print karenge
-		// %s isliye use kiya kyunki jsonData ek byte slice hai
-		fmt.Printf("DATA: %s\n", string(jsonData))
+		// Terminal par bhi dikhao
+		fmt.Printf("Logging: %s\n", string(jsonData))
+
+		// Step 10: File mein likhna
+		// Har result ke baad \n (newline) dena zaroori hai taaki JSONL format rahe
+		_, err = f.WriteString(string(jsonData) + "\n")
+		if err != nil {
+			fmt.Printf("Error writing to file: %v\n", err)
+		}
 
 		go func(l string) {
 			time.Sleep(10 * time.Second)
@@ -59,12 +69,12 @@ func main() {
 func checkLink(link string, c chan result, client *http.Client) {
 	res := result{
 		URL:       link,
-		Timestamp: time.Now().Format("2006-01-02 15:04:05"), // Proper ISO-ish format
+		Timestamp: time.Now().Format("2006-01-02 15:04:05"),
 	}
 
 	resp, err := client.Get(link)
 	if err != nil {
-		res.ErrorMsg = err.Error() // error ko string mein convert kiya
+		res.ErrorMsg = err.Error()
 		c <- res
 		return
 	}
